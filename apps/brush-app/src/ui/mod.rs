@@ -11,6 +11,8 @@ mod stats;
 mod widget_3d;
 
 mod datasets;
+#[cfg(not(target_family = "wasm"))]
+mod ghi_pipeline;
 
 mod training_panel;
 

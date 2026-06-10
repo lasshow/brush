@@ -64,6 +64,7 @@ image = { workspace = true }
 # On desktop platforms
 [target.'cfg(any(target_family = "unix", target_family = "windows"))'.dependencies]
 brush-cli.path = "../brush-cli"
+rfd = "0.17"
 
 winit = { version = "0.30", features = ["default"] }
 clap.workspace = true

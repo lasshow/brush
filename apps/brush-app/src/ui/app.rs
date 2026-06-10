@@ -15,6 +15,9 @@ use crate::ui::{
     training_panel::TrainingPanel, ui_process::UiProcess,
 };
 
+#[cfg(not(target_family = "wasm"))]
+use crate::ui::ghi_pipeline::GhiPipelinePanel;
+
 /// Pane enum that wraps all panel types for serialization.
 #[derive(Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
@@ -25,6 +28,8 @@ pub enum Pane {
     Training(#[serde(skip)] TrainingPanel),
     Settings(#[serde(skip)] SettingsPanel),
     Log(#[serde(skip)] LogPanel),
+    #[cfg(not(target_family = "wasm"))]
+    Pipeline(#[serde(skip)] GhiPipelinePanel),
 }
 
 impl Pane {
@@ -36,6 +41,8 @@ impl Pane {
             Self::Training(p) => p,
             Self::Settings(p) => p,
             Self::Log(p) => p,
+            #[cfg(not(target_family = "wasm"))]
+            Self::Pipeline(p) => p,
         }
     }
 
@@ -47,6 +54,8 @@ impl Pane {
             Self::Training(p) => p,
             Self::Settings(p) => p,
             Self::Log(p) => p,
+            #[cfg(not(target_family = "wasm"))]
+            Self::Pipeline(p) => p,
         }
     }
 
@@ -75,6 +84,11 @@ impl Pane {
     fn log() -> RefCell<Self> {
         #[allow(clippy::default_constructed_unit_structs)] // Pane derives Default via serde.
         RefCell::new(Self::Log(LogPanel::default()))
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn pipeline() -> RefCell<Self> {
+        RefCell::new(Self::Pipeline(GhiPipelinePanel::default()))
     }
 }
 
@@ -170,6 +184,10 @@ impl App {
             let training_pane = tiles.insert_pane(Pane::training());
             let settings_pane = tiles.insert_pane(Pane::settings());
             let log_pane = tiles.insert_pane(Pane::log());
+            #[cfg(not(target_family = "wasm"))]
+            let pipeline_pane = Some(tiles.insert_pane(Pane::pipeline()));
+            #[cfg(target_family = "wasm")]
+            let pipeline_pane = None;
             Self::build_default_layout(
                 &mut tiles,
                 scene_pane,
@@ -178,6 +196,7 @@ impl App {
                 training_pane,
                 settings_pane,
                 log_pane,
+                pipeline_pane,
             )
         };
 
@@ -191,12 +210,18 @@ impl App {
                 .iter()
                 .any(|(_, tile)| matches!(tile, egui_tiles::Tile::Pane(p) if f(&p.borrow())))
         }
+        #[cfg(not(target_family = "wasm"))]
+        let has_pipeline = has(tree, |p| matches!(p, Pane::Pipeline(_)));
+        #[cfg(target_family = "wasm")]
+        let has_pipeline = true;
+
         has(tree, |p| matches!(p, Pane::Scene(_)))
             && has(tree, |p| matches!(p, Pane::Stats(_)))
             && has(tree, |p| matches!(p, Pane::Dataset(_)))
             && has(tree, |p| matches!(p, Pane::Training(_)))
             && has(tree, |p| matches!(p, Pane::Settings(_)))
             && has(tree, |p| matches!(p, Pane::Log(_)))
+            && has_pipeline
     }
 
     pub fn new(
@@ -249,6 +274,7 @@ impl App {
         &self.tree_ctx.process
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_default_layout(
         tiles: &mut Tiles<PaneRef>,
         scene_pane: TileId,
@@ -257,16 +283,24 @@ impl App {
         training_pane: TileId,
         settings_pane: TileId,
         log_pane: TileId,
+        pipeline_pane: Option<TileId>,
     ) -> TileId {
+        // Dataset / Pipeline GHI share a tabbed area.
+        let dataset_tabs = if let Some(pipeline_pane) = pipeline_pane {
+            tiles.insert_tab_tile(vec![dataset_pane, pipeline_pane])
+        } else {
+            dataset_pane
+        };
+
         // Stats / Log / Settings share a tabbed area
         let bottom_tabs = tiles.insert_tab_tile(vec![stats_pane, log_pane, settings_pane]);
 
         let mut sidebar = egui_tiles::Linear::new(
             egui_tiles::LinearDir::Vertical,
-            vec![training_pane, dataset_pane, bottom_tabs],
+            vec![training_pane, dataset_tabs, bottom_tabs],
         );
         sidebar.shares.set_share(training_pane, 0.12);
-        sidebar.shares.set_share(dataset_pane, 0.53);
+        sidebar.shares.set_share(dataset_tabs, 0.53);
         sidebar.shares.set_share(bottom_tabs, 0.35);
         let sidebar_id = tiles.insert_container(sidebar);
 
@@ -333,6 +367,10 @@ impl eframe::App for App {
             let training_pane = find_pane(&tree.tiles, |p| matches!(p, Pane::Training(_)));
             let settings_pane = find_pane(&tree.tiles, |p| matches!(p, Pane::Settings(_)));
             let log_pane = find_pane(&tree.tiles, |p| matches!(p, Pane::Log(_)));
+            #[cfg(not(target_family = "wasm"))]
+            let pipeline_pane = Some(find_pane(&tree.tiles, |p| matches!(p, Pane::Pipeline(_))));
+            #[cfg(target_family = "wasm")]
+            let pipeline_pane = None;
 
             // Remove all container tiles
             let container_ids: Vec<TileId> = tree
@@ -353,6 +391,7 @@ impl eframe::App for App {
                 training_pane,
                 settings_pane,
                 log_pane,
+                pipeline_pane,
             ));
         }
 
